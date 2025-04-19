@@ -1,196 +1,296 @@
 <template>
-  <div class="video-container">
-    <div 
-      v-for="(video, index) in videoList" 
-      :key="index" 
-      class="video-card"
-      @click="handleCardClick(index)"
-    >
-      <div class="video-wrapper">
-        <div :id="'dplayer-' + index" class="dplayer-container"></div>
+  <div class="live-stream-container">
+    <!-- 比赛信息 -->
+    <div class="game-header" v-if="gameData">
+      <div class="team-info away-team">
+        <img :src="gameData.awayTeam.logo" :alt="gameData.awayTeam.name" />
+        <div class="team-details">
+          <h3>{{ gameData.awayTeam.city }}</h3>
+          <p>{{ gameData.awayTeam.name }}</p>
+          <span>{{ gameData.awayTeam.record }}</span>
+        </div>
       </div>
-      <div class="video-info">
-        <h3 class="video-title">{{ video.title }}</h3>
-        <p class="video-desc">{{ video.description }}</p>
+      
+      <div class="vs-circle">VS</div>
+      
+      <div class="team-info home-team">
+        <img :src="gameData.homeTeam.logo" :alt="gameData.homeTeam.name" />
+        <div class="team-details">
+          <h3>{{ gameData.homeTeam.city }}</h3>
+          <p>{{ gameData.homeTeam.name }}</p>
+          <span>{{ gameData.homeTeam.record }}</span>
+        </div>
       </div>
     </div>
+    
+    <!-- 播放器 -->
+    <div id="dplayer-live" class="dplayer-container"></div>
+    
+    <!-- 直播源列表（始终显示） -->
+    <div class="stream-switcher" v-if="allStreams.length > 0">
+      <!-- <h3>直播源</h3> -->
+      <div class="stream-buttons">
+        <button
+          v-for="stream in allStreams"
+          :key="stream.type"
+          @click="switchStream(stream)"
+          :class="{ active: currentStream?.type === stream.type }"
+        >
+          {{ getStreamName(stream.type) }}
+        </button>
+      </div>
+    </div>
+    
+    <!-- 返回按钮 -->
+    <button class="back-button" @click="goBack">
+      ← 返回赛程
+    </button>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useGameStore } from '@/stores/game'
 import DPlayer from 'dplayer'
 import Hls from 'hls.js'
 import Flv from 'flv.js'
-// 将 flv.js 注册为全局变量
+
+// 注册全局变量
 window.flvjs = Flv
 window.Hls = Hls
-// 视频列表数据
-const videoList = ref([
-  {
-    title: '示例视频1',
-    description: '这是一个示例视频描述',
-    // url: './../../public/videos/7.mp4',
-    url: 'https://feijing-xzbonlinepull.bszb.me/live/202_3520771_1.m3u8?txSecret=92b9a5df1d71b2a1dbf4cb41e7c7b507&txTime=68011a9d',
-    // pic: 'https://example.com/poster1.jpg'
-  },
-  // {
-  //   title: '示例视频2',
-  //   description: '这是另一个示例视频描述',
-  //   url: 'https://example.com/video2.mp4',
-  //   pic: 'https://example.com/poster2.jpg'
-  // },
-  // 可以添加更多视频
-])
 
-const dpInstances = ref([])
+const router = useRouter()
+const gameStore = useGameStore()
+
+const dpInstance = ref(null)
+
+// 从store获取数据
+const gameData = computed(() => gameStore.currentGame)
+const allStreams = computed(() => gameStore.allStreams)
+const currentStream = computed({
+  get: () => gameStore.currentStream,
+  set: (val) => gameStore.currentStream = val
+})
 
 // 初始化播放器
-const initDPlayers = () => {
-  videoList.value.forEach((video, index) => {
-    const dp = new DPlayer({
-      container: document.getElementById(`dplayer-${index}`),
-      // live: true,
-      screenshot: true,
-      autoplay: true,
-      theme: '#b7daff',
-      loop: false,
-      lang: 'zh-cn',
-      hotkey: true,
-      preload: 'auto',
-      volume: 0.6,
-      video: {
-        url: video.url,
-        pic: video.pic,
-        thumbnails: video.pic,
-        type: 'auto',
-      },
-      pluginOptions:{
-        hls: {
-          // 这里可以添加 HLS.js 的配置选项
-          debug: true,
-          enableWorker: true,
-          manifestLoadingTimeOut: 10000,
-          levelLoadingTimeOut: 10000,
-        },
-        flv: {
-          // 这里可以添加 FLV.js 的配置选项
-          enableWorker: true,
-          enableStashBuffer: true,
-          stashInitialSize: 128,
-        }
-      }
-    })
-    console.log(dp.plugins.flv); // flv 实例
-    // 监听播放器的事件
-    dpInstances.value.push(dp)
+const initPlayer = () => {
+  if (dpInstance.value) {
+    dpInstance.value.destroy();
+  }
 
-  })
+  dpInstance.value = new DPlayer({
+    container: document.getElementById('dplayer-live'),
+    live: true,
+    autoplay: true,
+    video: {
+      url: currentStream.value?.url || '',
+      type: 'auto'
+    }
+  });
+
+  // 强制设置视频尺寸
+  setTimeout(() => {
+    const container = document.getElementById('dplayer-live');
+    const video = container?.querySelector('video');
+    if (video) {
+      video.style.cssText = `
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+      `;
+      // console.log('视频实际尺寸:', video.videoWidth, 'x', video.videoHeight);
+    }
+  }, 500);
+};
+
+// 切换直播源
+const switchStream = (stream) => {
+  currentStream.value = stream
+  initPlayer()
 }
 
+// 获取直播源名称
+const getStreamName = (type) => {
+  const names = {
+    tx: '企鹅体育',
+    wl: '纬来体育',
+    mg: '咪咕体育', 
+    nba: '高清原声',
+    zb: '高清直播'
+  }
+  return names[type] || type
+}
 
-// 处理卡片点击事件
-const handleCardClick = (index) => {
-  // 暂停所有其他播放器
-  dpInstances.value.forEach((dp, i) => {
-    if (i !== index && !dp.video.paused) {
-      dp.pause()
-    }
-  })
+// 返回赛程页
+const goBack = () => {
+  gameStore.clearGameData()
+  router.go(-1)
 }
 
 onMounted(() => {
-  initDPlayers()
+  // 默认选择第一个直播源
+  if (allStreams.value.length > 0 && !currentStream.value) {
+    currentStream.value = allStreams.value[0]
+  }
+  initPlayer()
 })
 
 onBeforeUnmount(() => {
-  // 销毁所有播放器实例
-  dpInstances.value.forEach(dp => {
-    dp.destroy()
-  })
+  if (dpInstance.value) {
+    dpInstance.value.destroy()
+  }
 })
 </script>
 
 <style lang="scss" scoped>
-.video-container {
+.live-stream-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.game-header {
   display: flex;
-  flex-wrap: wrap;
-  padding: 40px 0;
   justify-content: center;
-  // align-items: center;
+  align-items: center;
+  gap: 40px;
+  margin-bottom: 20px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
 
-  .video-card {
-    flex: 1 1 calc(33.333% - 20px);
-    min-width: 768px;
-    max-width: 70%;
-    background: #d6f3f0;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+.team-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  
+  img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+  }
+  
+  .team-details {
+    text-align: center;
+    
+    h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #333;
+    }
+    
+    p {
+      margin: 5px 0;
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+    
+    span {
+      font-size: 0.9rem;
+      color: #666;
+    }
+  }
+}
+
+.vs-circle {
+  width: 50px;
+  height: 50px;
+  background: #e74c3c;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.dplayer-container {
+  width: 100%;
+  aspect-ratio: 16/9;
+  position: relative;
+  background: #000;
+
+  ::v-deep {
+    .dplayer-video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: contain !important;
+    }
+  }
+}
+
+.stream-switcher {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 20px;
+}
+
+.stream-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  
+  button {
+    padding: 8px 16px;
+    background: #f0f0f0;
+    border: none;
+    border-radius: 4px;
     cursor: pointer;
-
+    transition: all 0.2s;
+    
     &:hover {
-      // transform: translateY(-5px);
-      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      background: #e0e0e0;
     }
-
-    .video-wrapper {
-      position: relative;
-      padding-top: 56.25%; /* 16:9 宽高比 */
-      overflow: hidden;
-
-      .dplayer-container {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-      }
-    }
-
-    .video-info {
-      padding: 15px;
-
-      .video-title {
-        margin: 0 0 8px 0;
-        font-size: 1.1rem;
-        color: #333;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .video-desc {
-        margin: 0;
-        font-size: 0.9rem;
-        color: #666;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
+    
+    &.active {
+      background: #3498db;
+      color: white;
     }
   }
 }
 
-/* 移动端适配 */
+.back-button {
+  display: block;
+  width: 200px;
+  margin: 30px auto 0;
+  padding: 12px 24px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  text-align: center;
+  
+  &:hover {
+    background: #2980b9;
+  }
+}
+
 @media (max-width: 768px) {
-  .video-container {
-    .video-card {
-      flex: 1 1 calc(50% - 15px);
-      min-width: 100%;
-    }
+  .game-header {
+    flex-direction: column;
+    gap: 20px;
   }
-}
-
-@media (max-width: 480px) {
-  .video-container {
-
-    .video-card {
-      flex: 1 1 100%;
-      min-width: 100%;
-    }
+  
+  .vs-circle {
+    margin: 10px 0;
+  }
+  
+  .back-button {
+    width: 100%;
   }
 }
 </style>

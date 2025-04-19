@@ -2,12 +2,12 @@
   <div class="nba-schedule-container">
     <!-- 赞助商信息 -->
     <div v-if="scheduleData?.data?.sponsor" class="sponsor-banner">
-      <span>所有内容均来源互联网，如有侵权联系邮箱：xdd9@vip.qq.com</span>
-      <img
+      <span>所有内容均来源互联网，有问题请联系邮箱：xdd9@vip.qq.com</span>
+      <!-- <img
         :src="scheduleData.data.sponsor.logo"
         :alt="scheduleData.data.sponsor.name"
         class="sponsor-logo"
-      />
+      /> -->
     </div>
 
     <!-- 赛程日期导航 -->
@@ -49,7 +49,10 @@
               <!-- 客队信息 -->
               <div
                 class="team away-team"
-                :class="{ 'tbd-team': !game.teamValid }"
+                :class="{
+                  'tbd-team': !game.teamValid,
+                  winner: isWinner(game, 'away'), // 添加判断是否为胜者
+                }"
               >
                 <img
                   :src="game.awayTeamLogoDark"
@@ -91,7 +94,10 @@
               <!-- 主队信息 -->
               <div
                 class="team home-team"
-                :class="{ 'tbd-team': !game.teamValid }"
+                :class="{
+                  'tbd-team': !game.teamValid,
+                  winner: isWinner(game, 'home'), // 添加判断是否为胜者
+                }"
               >
                 <img
                   :src="game.homeTeamLogoDark"
@@ -115,25 +121,27 @@
               </div>
             </div>
 
-            <!-- 直播间按钮区域（仅当天进行中的比赛显示） -->
-            <div class="live-buttons" v-if="shouldShowLiveArea(game)">
-              <template v-if="game.status === 2 && hasLiveStreams(game.gameId)">
-                <button
-                  v-for="stream in getLiveStreams(game.gameId)"
-                  :key="stream.type"
-                  class="live-btn"
-                  :class="{
-                    primary: stream.type === 'qq',
-                    secondary: stream.type !== 'qq',
-                  }"
-                  @click="goToLive(stream.url)"
-                >
-                  <span class="btn-icon">📺</span>
-                  <span>{{ getStreamName(stream.type) }}</span>
-                </button>
+            <div class="live-buttons">
+              <!-- 只有当比赛未结束且是当天比赛时才显示直播区域 -->
+              <template v-if="game.status !== 3 && shouldShowLiveArea(game)">
+                <template v-if="hasLiveStreams(game.gameId)">
+                  <!-- 直播按钮 -->
+                  <button
+                    v-for="stream in getLiveStreams(game.gameId)"
+                    :key="stream.type"
+                    @click="goToLive(game, stream)"
+                    class="live-btn"
+                  >
+                    <span class="btn-icon">📺</span>
+                    {{ getStreamName(stream.type) }}
+                  </button>
+                </template>
+                <div v-else class="no-live">无直播信号</div>
               </template>
-              <div v-else-if="game.status === 1" class="no-live">未开始</div>
-              <div v-else class="no-live">无直播信号</div>
+              <div v-else-if="game.status === 3" class="no-live">
+                比赛已结束
+              </div>
+              <div v-else class="no-live">未开始</div>
             </div>
 
             <!-- 比赛场地和赛季信息 -->
@@ -162,7 +170,8 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { urls } from "@/api/nba";
 import { onMounted } from "vue";
-
+import { useGameStore } from "@/stores/game";
+const gameStore = useGameStore();
 const router = useRouter();
 const urlsData = ref([]);
 
@@ -170,22 +179,21 @@ const shouldShowLiveArea = (game) => {
   // 1. 已结束的比赛不显示
   if (game.status === 3) return false;
 
-  const gameDate = new Date(game.dateTimeUtc);
+  // 2. 获取今天的日期（北京时间）
   const today = new Date();
+  const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
 
-  // 2. 只显示当天及未来的比赛
-  // 清除时间部分，只比较日期
-  today.setHours(0, 0, 0, 0);
-  gameDate.setHours(0, 0, 0, 0);
-
-  return gameDate >= today;
+  // 3. 直接比较 startDate（已经是北京时间）
+  return game.startDate === todayStr;
 };
 
 onMounted(async () => {
   try {
     const response = await urls();
     urlsData.value = response || [];
-    // console.log("获取的直播URL:", urlsData.value);
+    // console.log("获取的直播URL数据:", urlsData.value); // 检查数据是否正确
   } catch (err) {
     console.error("获取直播URL失败:", err);
     urlsData.value = [];
@@ -205,25 +213,31 @@ const isLiveGame = (game) => {
 const hasLiveStreams = (gameId) => {
   if (!urlsData.value || !gameId) return false;
 
-  // 查找匹配的gameId
-  const gameStreams = urlsData.value.find((item) => item[gameId]);
-  return !!gameStreams;
+  // 遍历所有直播流数据
+  for (const streamGroup of urlsData.value) {
+    if (streamGroup[gameId]) {
+      return true;
+    }
+  }
+  return false;
 };
 
 // 获取比赛的直播流
 const getLiveStreams = (gameId) => {
-  if (!urlsData.value || !gameId) return [];
-
-  const gameStreams = urlsData.value.find((item) => item[gameId]);
-  return gameStreams ? gameStreams[gameId] : [];
+  const id = String(gameId); // 转为字符串
+  for (const streamGroup of urlsData.value) {
+    if (streamGroup[id]) return streamGroup[id];
+  }
+  return [];
 };
 
 // 获取流名称
 const getStreamName = (type) => {
   const names = {
-    tx: "TX直播",
-    wl: "纬来直播",
-    nba: "原声直播",
+    tx: "企鹅体育",
+    wl: "纬来体育",
+    nba: "高清原声",
+    mg: "咪咕体育",
     zb: "高清直播",
     // 可以添加更多类型
   };
@@ -231,14 +245,39 @@ const getStreamName = (type) => {
 };
 
 // 跳转到直播页面
-const goToLive = (url) => {
-  if (!url) return;
+const goToLive = (game, stream) => {
+  // 准备比赛数据
+  const gameData = {
+    homeTeam: {
+      name: game.homeTeamName,
+      logo: game.homeTeamLogoDark,
+      city: game.homeTeamCity,
+      record: `${game.homeTeamWins}胜-${game.homeTeamLosses}负`,
+    },
+    awayTeam: {
+      name: game.awayTeamName,
+      logo: game.awayTeamLogoDark,
+      city: game.awayTeamCity,
+      record: `${game.awayTeamWins}胜-${game.awayTeamLosses}负`,
+    },
+    gameInfo: {
+      arena: game.arenaName,
+      season: game.seasonName,
+    },
+  };
 
+  // 存储到Pinia
+  gameStore.setCurrentGame({
+    gameData,
+    currentStream: stream,
+    allStreams: getLiveStreams(game.gameId),
+  });
+
+  // 导航到播放页
   router.push({
     name: "Play",
-    query: {
-      url: url,
-      // 其他参数...
+    params: {
+      gameId: game.gameId,
     },
   });
 };
@@ -322,6 +361,19 @@ const changeDate = (direction) => {
 
   if (date) {
     emit("dateChange", date);
+  }
+};
+
+// 判断某支球队是否是胜者
+const isWinner = (game, teamType) => {
+  // 如果比赛未结束，没有胜者
+  if (game.status !== 3) return false;
+
+  // 比较比分
+  if (teamType === 'away') {
+    return game.awayTeamScore > game.homeTeamScore;
+  } else {
+    return game.homeTeamScore > game.awayTeamScore;
   }
 };
 </script>
@@ -520,8 +572,8 @@ const changeDate = (direction) => {
 }
 
 .game-not-started {
-  color: #6c757d;
-  font-size: 16px;
+  color: #5a7cec;
+  font-size: 18px;
 }
 
 .game-in-progress {
@@ -692,5 +744,21 @@ const changeDate = (direction) => {
   background-color: #f8f8f8;
   border-radius: 8px;
   margin: 20px 0;
+}
+/* 胜者背景色 */
+.team.winner {
+  background-color: rgba(76, 175, 80, 0.1); /* 浅绿色背景 */
+  border-left: 3px solid #74fd79; /* 左侧绿色边框 */
+}
+
+/* 如果希望更明显的效果，可以调整样式 */
+.team.winner .team-name {
+  font-weight: bold;
+  color: #2E7D32; /* 深绿色文字 */
+}
+
+.team.winner .team-score {
+  font-weight: bold;
+  color: #2E7D32; /* 深绿色比分 */
 }
 </style>
