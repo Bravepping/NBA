@@ -81,4 +81,20 @@ const addUrls = async (gameId, urls) => {
   });
 };
 
-export { schedule, games, urls, go,addUrls };
+// 在nba.js中添加删除函数
+const deleteUrlById = async (id) => {
+  return await nbaapi({
+    url: `/delete/${id}`,
+    method: 'get',
+  })
+  .then((response) => {
+    return response.data;
+  })
+  .catch((error) => {
+    console.error('删除直播URL失败:', error);
+    throw error;
+  });
+};
+
+
+export { schedule, games, urls, go,addUrls,deleteUrlById };
