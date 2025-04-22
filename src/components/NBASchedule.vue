@@ -122,25 +122,33 @@
             </div>
 
             <div class="live-buttons">
-              <!-- 只有当比赛未结束且是当天比赛时才显示直播区域 -->
-              <template v-if="game.status !== 3 && shouldShowLiveArea(game)">
-                <template v-if="hasLiveStreams(game.gameId)">
-                  <!-- 直播按钮 -->
-                  <button
-                    v-for="stream in getLiveStreams(game.gameId)"
-                    :key="stream.type"
-                    @click="goToLive(game, stream)"
-                    class="live-btn"
-                  >
-                    <span class="btn-icon">📺</span>
-                    {{ getStreamName(stream.type) }}
-                  </button>
+              <!-- 进行中的比赛 -->
+              <template v-if="game.status === 2">
+                <!-- 只对当天比赛显示直播按钮 -->
+                <template v-if="isTodayGame(game)">
+                  <template v-if="hasLiveStreams(game.gameId)">
+                    <button
+                      v-for="stream in getLiveStreams(game.gameId)"
+                      :key="stream.type"
+                      @click="goToLive(game, stream)"
+                      class="live-btn"
+                    >
+                      <span class="btn-icon">📺</span>
+                      {{ getStreamName(stream.type) }}
+                    </button>
+                  </template>
+                  <div v-else class="no-live">无直播信号</div>
                 </template>
-                <div v-else class="no-live">无直播信号</div>
+                <!-- 非当天进行中比赛（理论上不应该存在） -->
+                <div v-else class="no-live">比赛进行中</div>
               </template>
+
+              <!-- 已结束的比赛（无论是否当天） -->
               <div v-else-if="game.status === 3" class="no-live">
                 比赛已结束
               </div>
+
+              <!-- 未开始的比赛 -->
               <div v-else class="no-live">未开始</div>
             </div>
 
@@ -175,38 +183,26 @@ const gameStore = useGameStore();
 const router = useRouter();
 const urlsData = ref([]);
 
-const shouldShowLiveArea = (game) => {
-  // 1. 已结束的比赛不显示
-  if (game.status === 3) return false;
-
-  // 2. 获取今天的日期（北京时间）
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1)
-    .toString()
-    .padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
-
-  // 3. 直接比较 startDate（已经是北京时间）
-  return game.startDate === todayStr;
-};
-
 onMounted(async () => {
   try {
     const response = await urls();
     urlsData.value = response || [];
-    // console.log("获取的直播URL数据:", urlsData.value); // 检查数据是否正确
   } catch (err) {
     console.error("获取直播URL失败:", err);
     urlsData.value = [];
   }
 });
 
-// 判断是否为当天进行中的比赛
-const isLiveGame = (game) => {
-  const isLive = game.status === 2; // 假设2表示进行中
-  const gameDate = new Date(game.dateTimeUtc);
+// 判断是否为当天比赛（无论状态如何）
+const isTodayGame = (game) => {
+  // 获取今天的日期（北京时间）
   const today = new Date();
-  const isToday = gameDate.toDateString() === today.toDateString();
-  return isLive && isToday;
+  const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
+
+  // 直接比较 startDate（已经是北京时间）
+  return game.startDate === todayStr;
 };
 
 // 检查比赛是否有直播流
@@ -239,7 +235,6 @@ const getStreamName = (type) => {
     nba: "高清原声",
     mg: "咪咕体育",
     zb: "高清直播",
-    // 可以添加更多类型
   };
   return names[type] || type;
 };
@@ -299,7 +294,6 @@ const props = defineProps({
 
 const emit = defineEmits(["dateChange"]);
 
-// 当前显示日期
 // 当前显示日期（带星期几）
 const currentDisplayDate = computed(() => {
   if (!props.scheduleData?.data?.start) return "加载中...";
@@ -370,7 +364,7 @@ const isWinner = (game, teamType) => {
   if (game.status !== 3) return false;
 
   // 比较比分
-  if (teamType === 'away') {
+  if (teamType === "away") {
     return game.awayTeamScore > game.homeTeamScore;
   } else {
     return game.homeTeamScore > game.awayTeamScore;
@@ -754,11 +748,11 @@ const isWinner = (game, teamType) => {
 /* 如果希望更明显的效果，可以调整样式 */
 .team.winner .team-name {
   font-weight: bold;
-  color: #2E7D32; /* 深绿色文字 */
+  color: #2e7d32; /* 深绿色文字 */
 }
 
 .team.winner .team-score {
   font-weight: bold;
-  color: #2E7D32; /* 深绿色比分 */
+  color: #2e7d32; /* 深绿色比分 */
 }
 </style>
