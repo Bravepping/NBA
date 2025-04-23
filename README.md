@@ -1,29 +1,43 @@
-# NBA
+# NBA赛事共享在线观看平台
 
-This template should help get you started developing with Vue 3 in Vite.
+## 项目简介
 
-## Recommended IDE Setup
+本项目是一个基于 NBA 赛事的共享在线观看平台，支持实时展示赛程、赛事直播播放等功能。用户可以便捷地浏览最新赛程信息，并使用内嵌播放器观看赛事直播。平台通过整合腾讯体育资源，自动化采集与维护直播数据，实现赛事数据的高效管理与分享。
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## 技术栈
 
-## Customize configuration
+### 后端技术
+- **Spring Boot**：构建高性能的后端服务。
+- **MyBatis**：简化数据库操作，灵活执行 SQL。
+- **MySQL**：存储赛程、直播间等核心数据。
+- **Redis**：缓存腾讯体育 Cookie 及直播数据，提升请求效率。
+- **Scheduled Task**：定时任务机制，周期性同步直播信息。
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+### 前端技术
+- **Vue 3**：构建响应式单页应用。
+- **Pinia**：集中式状态管理，存储赛程相关数据。
+- **Vue Router**：实现页面间路由导航。
+- **Axios**：与后端进行 HTTP 通信。
+- **DPlayer**：集成播放器，用于播放赛事直播流。
 
-## Project Setup
+## 核心功能实现
 
-```sh
-pnpm install
-```
+- **Cookie自动更新与存储**：后端首次手动配置腾讯体育 Cookie 并保存至 Redis，通过定时任务定期刷新 Cookie，保证接口调用的稳定性。
+- **直播数据采集**：根据数据库中的赛程 ID，携带 Cookie 向腾讯体育接口发起请求，抓取对应的直播间信息，并定期存储至直播间信息表。
+- **前端展示与播放**：
+  - 使用 Axios 获取后端赛程数据，展示赛程信息。
+  - 用户点击感兴趣的赛程后，前端将相关 ID 保存到 Pinia 中，用于后续状态追踪与页面展示。
+  - 基于 DPlayer 实现直播流的嵌入播放体验。
 
-### Compile and Hot-Reload for Development
+## 项目亮点
 
-```sh
-pnpm dev
-```
+- 实现与第三方平台（腾讯体育）无官方 API 接口的半自动数据采集与更新。
+- 利用 Redis 缓存与定时刷新机制，提升系统稳定性与数据实时性。
+- 前后端分离架构，增强了系统的可维护性和拓展性。
+- 播放器集成体验良好，用户可便捷观看赛事直播。
 
-### Compile and Minify for Production
+## 后续优化方向
 
-```sh
-pnpm build
-```
+- 接入用户评论与弹幕系统，提升用户互动性。
+- 增加赛事订阅与提醒功能，优化用户体验。
+- 提升异常处理与容错机制，增强系统健壮性。
